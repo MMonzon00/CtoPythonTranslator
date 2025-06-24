@@ -1,0 +1,15 @@
+# Bison/Flex build files
+parser.tab.c
+parser.tab.h
+lex.yy.c
+parser.output
+
+# Compiled output
+translator
+*.out
+*.o
+
+# General
+*.pyc
+__pycache__/
+output.py
