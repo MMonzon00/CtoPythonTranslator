@@ -12,6 +12,8 @@ typedef struct symbol {
 
 symbol_t* symbol_table = NULL;
 int indent_level = 0;
+int in_control_structure = 0;  // Flag to track if we're inside if/while/for
+int in_main_function = 0;      // Flag to track if we're inside main function
 FILE* output_file = NULL;
 char* input_filename = NULL;
 char* output_filename = NULL;
@@ -42,7 +44,7 @@ extern FILE* yyin;
 %token <cval> CHAR_LITERAL
 %token <sval> ID STRING_LITERAL
 %token INT FLOAT CHAR CONST VOID
-%token IF ELSE WHILE FOR DO BREAK CONTINUE RETURN
+%token IF ELSE WHILE BREAK CONTINUE RETURN
 %token PLUS MINUS MULTIPLY DIVIDE MODULO
 %token ASSIGN EQ NE LT LE GT GE AND OR NOT
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
@@ -67,6 +69,7 @@ program:
     /* empty */
     | program declaration
     | program statement
+    | program function_definition
     ;
 
 declaration:
@@ -117,11 +120,23 @@ idlist:
     }
     ;
 
+function_definition:
+    VOID ID LPAREN RPAREN {
+        if (strcmp($2, "main") == 0) {
+            in_main_function = 1;
+        }
+        indent_level = 0;
+        free($2);
+    } compound_statement {
+        in_main_function = 0;
+        indent_level = 0;
+    }
+    ;
+
 statement:
     assignment_statement
     | if_statement
     | while_statement
-    | for_statement
     | compound_statement
     | expression_statement
     ;
@@ -160,36 +175,25 @@ if_statement:
     ;
 
 while_statement:
-    WHILE LPAREN expression RPAREN statement {
+    WHILE LPAREN expression RPAREN {
         print_indent();
         fprintf(output_file, "while %s:\n", $3);
+        indent_level++;
         free($3);
-    }
-    ;
-
-for_statement:
-    FOR LPAREN assignment_or_empty SEMICOLON expression SEMICOLON assignment_or_empty RPAREN statement {
-        print_indent();
-        fprintf(output_file, "while %s:\n", $5);
-        free($5);
-    }
-    ;
-
-assignment_or_empty:
-    /* empty */
-    | ID ASSIGN expression {
-        print_indent();
-        fprintf(output_file, "%s = %s\n", $1, $3);
-        free($1);
-        free($3);
+    } statement {
+        indent_level--;
     }
     ;
 
 compound_statement:
     LBRACE { 
-        indent_level++;
+        if (!in_main_function) {
+            indent_level++;
+        }
     } statement_list RBRACE {
-        indent_level--;
+        if (!in_main_function) {
+            indent_level--;
+        }
     }
     ;
 
@@ -385,11 +389,9 @@ char* get_output_filename(char* input_name) {
     char* output_name = malloc(strlen(input_name) + 10);
     strcpy(output_name, input_name);
     
-    // Remove extension if present
     char* dot = strrchr(output_name, '.');
     if (dot) *dot = '\0';
     
-    // Add .py extension
     strcat(output_name, ".py");
     return output_name;
 }
@@ -417,7 +419,6 @@ void close_output_file() {
 
 int main(int argc, char* argv[]) {
     if (argc > 1) {
-        // Input file provided
         input_filename = argv[1];
         yyin = fopen(input_filename, "r");
         if (!yyin) {
@@ -426,7 +427,6 @@ int main(int argc, char* argv[]) {
         }
         open_output_file(input_filename);
     } else {
-        // Reading from stdin
         open_output_file(NULL);
     }
     

@@ -14,8 +14,6 @@ const       { return CONST; }
 if          { return IF; }
 else        { return ELSE; }
 while       { return WHILE; }
-for         { return FOR; }
-do          { return DO; }
 break       { return BREAK; }
 continue    { return CONTINUE; }
 return      { return RETURN; }
