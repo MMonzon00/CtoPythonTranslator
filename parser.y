@@ -80,6 +80,17 @@ declaration:
         }
         free($3);
     }
+    | const_flag type ID ASSIGN expression SEMICOLON {
+        add_symbol($3, $2, $1);
+        print_indent();
+        if ($1) {
+            fprintf(output_file, "# Constant: %s\n", $3);
+            print_indent();
+        }
+        fprintf(output_file, "%s = %s  # %s\n", $3, $5, $2);
+        free($3);
+        free($5);
+    }
     ;
 
 const_flag:
@@ -142,10 +153,8 @@ if_statement:
     | IF LPAREN expression RPAREN statement ELSE statement {
         print_indent();
         fprintf(output_file, "if %s:\n", $3);
-        indent_level++;
         print_indent();
         fprintf(output_file, "else:\n");
-        indent_level--;
         free($3);
     }
     ;
@@ -177,7 +186,11 @@ assignment_or_empty:
     ;
 
 compound_statement:
-    LBRACE statement_list RBRACE
+    LBRACE { 
+        indent_level++;
+    } statement_list RBRACE {
+        indent_level--;
+    }
     ;
 
 statement_list:
