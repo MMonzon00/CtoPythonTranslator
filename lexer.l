@@ -15,7 +15,7 @@ const       { return CONST; }
 "="         { return ASSIGN; }
 
 [ \t\n]     ;  // skip whitespace
-
+[ \t\n\r]
 .           { return yytext[0]; }
 
 %%
