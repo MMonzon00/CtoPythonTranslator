@@ -13,3 +13,5 @@ translator
 *.pyc
 __pycache__/
 output.py
+
+translator.exe
