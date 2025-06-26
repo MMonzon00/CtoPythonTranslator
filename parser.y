@@ -59,19 +59,14 @@ extern FILE* yyin;
 %left MULTIPLY DIVIDE MODULO
 %right NOT
 %right UMINUS
-%nonassoc ELSE
+%right ELSE
 
 %%
 
 program:
-    declarations statements
-    | declarations
-    | statements
-    ;
-
-declarations: 
     /* empty */
-    | declarations declaration
+    | program declaration
+    | program statement
     ;
 
 declaration:
@@ -111,11 +106,6 @@ idlist:
     }
     ;
 
-statements:
-    /* empty */
-    | statements statement
-    ;
-
 statement:
     assignment_statement
     | if_statement
@@ -152,8 +142,10 @@ if_statement:
     | IF LPAREN expression RPAREN statement ELSE statement {
         print_indent();
         fprintf(output_file, "if %s:\n", $3);
+        indent_level++;
         print_indent();
         fprintf(output_file, "else:\n");
+        indent_level--;
         free($3);
     }
     ;
@@ -185,7 +177,12 @@ assignment_or_empty:
     ;
 
 compound_statement:
-    LBRACE statements RBRACE
+    LBRACE statement_list RBRACE
+    ;
+
+statement_list:
+    /* empty */
+    | statement_list statement
     ;
 
 expression_statement:

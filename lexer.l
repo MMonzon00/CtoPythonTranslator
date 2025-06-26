@@ -2,6 +2,9 @@
 #include "parser.tab.h"
 %}
 
+%option nounput
+%option noinput
+
 %%
 
 int         { return INT; }
