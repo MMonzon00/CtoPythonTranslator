@@ -55,10 +55,45 @@ run-test: test
 	@echo "--- test_advanced.py ---"
 	python3 test_advanced.py
 
+# Individual test targets
+test-variables: compiler
+	./compiler test/test_variables.c
+	@echo "✅ Test de variables completado"
+
+test-conditionals: compiler
+	./compiler test/test_conditionals.c
+	@echo "✅ Test de condicionales completado"
+
+test-loops: compiler
+	./compiler test/test_loops.c
+	@echo "✅ Test de loops completado"
+
+test-nested: compiler
+	./compiler test/test_nested.c
+	@echo "✅ Test de estructuras anidadas completado"
+
+test-types: compiler
+	./compiler test/test_types.c
+	@echo "✅ Test de tipos completado"
+
+test-errors: compiler
+	./compiler test/test_errors.c
+	@echo "⚠️  Test de errores completado (se esperan errores)"
+
+test-complete: compiler
+	./compiler test/test_complete.c
+	@echo "✅ Test completo completado"
+
+# Execute all individual tests
+test-all: test-variables test-conditionals test-loops test-nested test-types test-complete test-errors
+	@echo ""
+	@echo "=== TODOS LOS TESTS COMPLETADOS ==="
+
 # Clean generated files
 clean:
 	rm -f compiler lex.yy.c parser.tab.c parser.tab.h 
 	rm -f test_basic.c test_advanced.c test_basic.py test_advanced.py
+	rm -f test/*.py
 	rm -f *.py
 
-.PHONY: all test run-test clean
+.PHONY: all test run-test test-variables test-conditionals test-loops test-nested test-types test-errors test-complete test-all clean
