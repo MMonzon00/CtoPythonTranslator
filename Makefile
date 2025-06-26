@@ -1,11 +1,4 @@
-# Run Python output to verify it works
-run-test: test
-	@echo ""
-	@echo "=== Running generated Python code ==="
-	@echo "--- test_basic.py ---"
-	python3 test_basic.py
-	@echo "--- test_advanced.py ---"
-	python3 test_advanced.pyCC = gcc
+CC = gcc
 CFLAGS = -Wall -g
 
 # Default target
@@ -52,6 +45,15 @@ test: compiler test_basic.c test_advanced.c
 	./compiler test_advanced.c
 	@echo "Generated: test_advanced.py"
 	@cat test_advanced.py
+
+# Run Python output to verify it works
+run-test: test
+	@echo ""
+	@echo "=== Running generated Python code ==="
+	@echo "--- test_basic.py ---"
+	python3 test_basic.py
+	@echo "--- test_advanced.py ---"
+	python3 test_advanced.py
 
 # Clean generated files
 clean:
