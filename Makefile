@@ -68,6 +68,10 @@ test-loops: compiler
 	./compiler test/test_loops.c
 	@echo "✅ Test de loops completado"
 
+test-functions: compiler
+	./compiler test/test_functions.c
+	@echo "✅ Test de funciones completado"
+
 test-arrays: compiler
 	./compiler test/test_arrays.c
 	@echo "✅ Test de arrays completado"
@@ -79,6 +83,14 @@ test-multidim-arrays: compiler
 test-nested: compiler
 	./compiler test/test_nested.c
 	@echo "✅ Test de estructuras anidadas completado"
+	
+test-scope: compiler
+	./compiler test/test_scope.c
+	@echo "✅ Test de alcance completado"
+
+test-scope-control: compiler
+	./compiler test/test_scope_control.c
+	@echo "✅ Test de control de alcance completado"
 
 test-types: compiler
 	./compiler test/test_types.c

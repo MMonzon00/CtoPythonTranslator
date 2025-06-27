@@ -53,9 +53,3 @@ if (average >= 90.0) {
     }
 }
 
-// Ciclo for para procesamiento final
-for (counter = 1; counter <= 5; counter = counter + 1) {
-    if (counter < 3 && grade == 'A') {
-        sum = sum + counter * 10;
-    }
-}
