@@ -8,7 +8,8 @@ typedef struct symbol {
     char* type;
     int is_const;
     int is_array;
-    int array_size;
+    int dimensions;         // Number of dimensions (0 = not array, 1 = 1D, 2 = 2D, etc.)
+    int* sizes;            // Array to store sizes for each dimension
     struct symbol* next;
 } symbol_t;
 
@@ -20,14 +21,16 @@ FILE* output_file = NULL;
 char* input_filename = NULL;
 char* output_filename = NULL;
 
-void add_symbol(char* name, char* type, int is_const, int is_array, int array_size);
+void add_symbol(char* name, char* type, int is_const, int dimensions, int* sizes);
 symbol_t* find_symbol(char* name);
 void print_indent();
-void generate_python_declaration(char* type, char* name, int is_const, int is_array, int array_size);
+void generate_python_declaration(char* type, char* name, int is_const, int dimensions, int* sizes);
 char* translate_type(char* c_type);
 char* get_output_filename(char* input_name);
 void open_output_file(char* filename);
 void close_output_file();
+char* generate_multidim_access(char* name, char* indices[], int dim_count);
+char* generate_multidim_init(char* type, int dimensions, int* sizes);
 
 int yylex(void);
 int yyerror(char *s);
@@ -39,6 +42,10 @@ extern FILE* yyin;
     float fval;
     char cval;
     char* sval;
+    struct {
+        int* sizes;
+        int count;
+    } dimensions;
 }
 
 %token <ival> NUMBER
@@ -54,6 +61,8 @@ extern FILE* yyin;
 
 %type <sval> type idlist expression term factor
 %type <ival> const_flag array_size
+%type <dimensions> array_dimensions
+%type <sval> index_list
 
 %left OR
 %left AND
@@ -93,14 +102,14 @@ declaration:
         char* ids = $3;
         char* token = strtok(ids, ",");
         while (token != NULL) {
-            add_symbol(token, $2, $1, 0, 0);  // not array
-            generate_python_declaration($2, token, $1, 0, 0);
+            add_symbol(token, $2, $1, 0, NULL);  // not array
+            generate_python_declaration($2, token, $1, 0, NULL);
             token = strtok(NULL, ",");
         }
         free($3);
     }
     | const_flag type ID ASSIGN expression SEMICOLON {
-        add_symbol($3, $2, $1, 0, 0);  // not array
+        add_symbol($3, $2, $1, 0, NULL);  // not array
         print_indent();
         if ($1) {
             fprintf(output_file, "# Constant: %s\n", $3);
@@ -110,21 +119,29 @@ declaration:
         free($3);
         free($5);
     }
-    | const_flag type ID LBRACKET array_size RBRACKET SEMICOLON {
-        add_symbol($3, $2, $1, 1, $5);  // is array
-        generate_python_declaration($2, $3, $1, 1, $5);
+    | const_flag type ID array_dimensions SEMICOLON {
+        add_symbol($3, $2, $1, $4.count, $4.sizes);  // multidimensional array
+        generate_python_declaration($2, $3, $1, $4.count, $4.sizes);
         free($3);
+        free($4.sizes);
     }
-    | const_flag type ID LBRACKET array_size RBRACKET ASSIGN LBRACE expression RBRACE SEMICOLON {
-        add_symbol($3, $2, $1, 1, $5);  // is array with initialization
+    | const_flag type ID array_dimensions ASSIGN LBRACE expression RBRACE SEMICOLON {
+        add_symbol($3, $2, $1, $4.count, $4.sizes);  // multidimensional array with initialization
         print_indent();
         if ($1) {
             fprintf(output_file, "# Constant array: %s\n", $3);
             print_indent();
         }
-        fprintf(output_file, "%s = [%s]  # %s array[%d]\n", $3, $9, $2, $5);
+        char* init_code = generate_multidim_init($2, $4.count, $4.sizes);
+        fprintf(output_file, "%s = %s  # %s array", $3, init_code, $2);
+        for (int i = 0; i < $4.count; i++) {
+            fprintf(output_file, "[%d]", $4.sizes[i]);
+        }
+        fprintf(output_file, "\n");
         free($3);
-        free($9);
+        free($7);
+        free(init_code);
+        free($4.sizes);
     }
     ;
 
@@ -148,6 +165,34 @@ idlist:
         sprintf(tmp, "%s,%s", $1, $3);
         free($1);
         $$ = tmp;
+    }
+    ;
+
+array_dimensions:
+    LBRACKET NUMBER RBRACKET {
+        $$.count = 1;
+        $$.sizes = malloc(sizeof(int));
+        $$.sizes[0] = $2;
+    }
+    | array_dimensions LBRACKET NUMBER RBRACKET {
+        $$.count = $1.count + 1;
+        $$.sizes = realloc($1.sizes, $$.count * sizeof(int));
+        $$.sizes[$$.count - 1] = $3;
+    }
+    ;
+
+index_list:
+    LBRACKET expression RBRACKET {
+        $$ = malloc(strlen($2) + 3);
+        sprintf($$, "[%s]", $2);
+        free($2);
+    }
+    | index_list LBRACKET expression RBRACKET {
+        char* result = malloc(strlen($1) + strlen($3) + 4);
+        sprintf(result, "%s[%s]", $1, $3);
+        free($1);
+        free($3);
+        $$ = result;
     }
     ;
 
@@ -179,23 +224,23 @@ assignment_statement:
         free($1);
         free($3);
     }
-    | ID LBRACKET expression RBRACKET ASSIGN expression SEMICOLON {
+    | ID index_list ASSIGN expression SEMICOLON {
         symbol_t* sym = find_symbol($1);
         if (sym) {
             if (sym->is_const) {
                 yyerror("Cannot assign to constant array element");
-            } else if (!sym->is_array) {
+            } else if (sym->dimensions == 0) {
                 yyerror("Variable is not an array");
             } else {
                 print_indent();
-                fprintf(output_file, "%s[%s] = %s\n", $1, $3, $6);
+                fprintf(output_file, "%s%s = %s\n", $1, $2, $4);
             }
         } else {
             yyerror("Undeclared variable");
         }
         free($1);
-        free($3);
-        free($6);
+        free($2);
+        free($4);
     }
     ;
 
@@ -351,16 +396,16 @@ factor:
         }
         $$ = strdup($1); 
     }
-    | ID LBRACKET expression RBRACKET {
+    | ID index_list {
         symbol_t* sym = find_symbol($1);
         if (!sym) {
             yyerror("Undeclared variable");
-        } else if (!sym->is_array) {
+        } else if (sym->dimensions == 0) {
             yyerror("Variable is not an array");
         }
-        char* result = malloc(strlen($1) + strlen($3) + 4);
-        sprintf(result, "%s[%s]", $1, $3);
-        free($3);
+        char* result = malloc(strlen($1) + strlen($2) + 1);
+        sprintf(result, "%s%s", $1, $2);
+        free($2);
         $$ = result;
     }
     | NUMBER { 
@@ -384,13 +429,23 @@ factor:
 
 %%
 
-void add_symbol(char* name, char* type, int is_const, int is_array, int array_size) {
+void add_symbol(char* name, char* type, int is_const, int dimensions, int* sizes) {
     symbol_t* new_symbol = malloc(sizeof(symbol_t));
     new_symbol->name = strdup(name);
     new_symbol->type = strdup(type);
     new_symbol->is_const = is_const;
-    new_symbol->is_array = is_array;
-    new_symbol->array_size = array_size;
+    new_symbol->is_array = (dimensions > 0);
+    new_symbol->dimensions = dimensions;
+    
+    if (dimensions > 0) {
+        new_symbol->sizes = malloc(dimensions * sizeof(int));
+        for (int i = 0; i < dimensions; i++) {
+            new_symbol->sizes[i] = sizes[i];
+        }
+    } else {
+        new_symbol->sizes = NULL;
+    }
+    
     new_symbol->next = symbol_table;
     symbol_table = new_symbol;
 }
@@ -412,23 +467,21 @@ void print_indent() {
     }
 }
 
-void generate_python_declaration(char* type, char* name, int is_const, int is_array, int array_size) {
+void generate_python_declaration(char* type, char* name, int is_const, int dimensions, int* sizes) {
     print_indent();
     if (is_const) {
-        fprintf(output_file, "# Constant%s: %s\n", is_array ? " array" : "", name);
+        fprintf(output_file, "# Constant%s: %s\n", (dimensions > 0) ? " array" : "", name);
         print_indent();
     }
     
-    if (is_array) {
-        if (strcmp(type, "int") == 0) {
-            fprintf(output_file, "%s = [0] * %d  # int array[%d]\n", name, array_size, array_size);
-        } else if (strcmp(type, "float") == 0) {
-            fprintf(output_file, "%s = [0.0] * %d  # float array[%d]\n", name, array_size, array_size);
-        } else if (strcmp(type, "char") == 0) {
-            fprintf(output_file, "%s = [''] * %d  # char array[%d]\n", name, array_size, array_size);
-        } else {
-            fprintf(output_file, "%s = [None] * %d  # %s array[%d]\n", name, array_size, type, array_size);
+    if (dimensions > 0) {
+        char* init_code = generate_multidim_init(type, dimensions, sizes);
+        fprintf(output_file, "%s = %s  # %s array", name, init_code, type);
+        for (int i = 0; i < dimensions; i++) {
+            fprintf(output_file, "[%d]", sizes[i]);
         }
+        fprintf(output_file, "\n");
+        free(init_code);
     } else {
         if (strcmp(type, "int") == 0) {
             fprintf(output_file, "%s = 0  # int\n", name);
@@ -447,6 +500,77 @@ char* translate_type(char* c_type) {
     if (strcmp(c_type, "float") == 0) return "float";
     if (strcmp(c_type, "char") == 0) return "str";
     return "object";
+}
+
+char* generate_multidim_init(char* type, int dimensions, int* sizes) {
+    if (dimensions == 0) {
+        return strdup("None");
+    }
+    
+    char* default_value;
+    if (strcmp(type, "int") == 0) {
+        default_value = "0";
+    } else if (strcmp(type, "float") == 0) {
+        default_value = "0.0";
+    } else if (strcmp(type, "char") == 0) {
+        default_value = "''";
+    } else {
+        default_value = "None";
+    }
+    
+    char* result = malloc(2000);  // Buffer larger for complex nested structures
+    
+    if (dimensions == 1) {
+        sprintf(result, "[%s] * %d", default_value, sizes[0]);
+    } else if (dimensions == 2) {
+        sprintf(result, "[[%s] * %d for _ in range(%d)]", default_value, sizes[1], sizes[0]);
+    } else if (dimensions == 3) {
+        sprintf(result, "[[[%s] * %d for _ in range(%d)] for _ in range(%d)]", 
+                default_value, sizes[2], sizes[1], sizes[0]);
+    } else if (dimensions == 4) {
+        sprintf(result, "[[[[%s] * %d for _ in range(%d)] for _ in range(%d)] for _ in range(%d)]", 
+                default_value, sizes[3], sizes[2], sizes[1], sizes[0]);
+    } else {
+        // For higher dimensions (5+), create a more complex nested structure
+        strcpy(result, "[");
+        for (int i = 1; i < dimensions; i++) {
+            strcat(result, "[");
+        }
+        strcat(result, default_value);
+        
+        for (int i = dimensions - 1; i >= 0; i--) {
+            char temp[100];
+            sprintf(temp, "] * %d", sizes[i]);
+            strcat(result, temp);
+            if (i > 0) {
+                sprintf(temp, " for _ in range(%d)", sizes[i-1]);
+                strcat(result, temp);
+            }
+            if (i > 0) {
+                strcat(result, "]");
+            }
+        }
+    }
+    
+    return result;
+}
+
+char* generate_multidim_access(char* name, char* indices[], int dim_count) {
+    int total_len = strlen(name) + 1;
+    for (int i = 0; i < dim_count; i++) {
+        total_len += strlen(indices[i]) + 3; // for [index]
+    }
+    
+    char* result = malloc(total_len);
+    strcpy(result, name);
+    
+    for (int i = 0; i < dim_count; i++) {
+        strcat(result, "[");
+        strcat(result, indices[i]);
+        strcat(result, "]");
+    }
+    
+    return result;
 }
 
 char* get_output_filename(char* input_name) {

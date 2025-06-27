@@ -72,6 +72,10 @@ test-arrays: compiler
 	./compiler test/test_arrays.c
 	@echo "✅ Test de arrays completado"
 
+test-multidim-arrays: compiler
+	./compiler test/test_multidim_arrays.c
+	@echo "✅ Test de arrays multidimensionales completado"
+
 test-nested: compiler
 	./compiler test/test_nested.c
 	@echo "✅ Test de estructuras anidadas completado"
@@ -89,7 +93,7 @@ test-complete: compiler
 	@echo "✅ Test completo completado"
 
 # Execute all individual tests
-test-all: test-variables test-conditionals test-loops test-nested test-types test-complete test-errors
+test-all: test-variables test-conditionals test-loops test-arrays test-multidim-arrays test-unified-multidim test-nested test-types test-complete test-errors
 	@echo ""
 	@echo "=== TODOS LOS TESTS COMPLETADOS ==="
 
