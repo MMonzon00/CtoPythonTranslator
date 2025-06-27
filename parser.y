@@ -63,7 +63,8 @@ extern FILE* yyin;
 %left MULTIPLY DIVIDE MODULO
 %right NOT
 %right UMINUS
-%right ELSE
+%nonassoc LOWER_THAN_ELSE
+%nonassoc ELSE
 
 %%
 
@@ -72,6 +73,19 @@ program:
     | program declaration
     | program statement
     | program function_definition
+    ;
+
+function_definition:
+    VOID ID LPAREN RPAREN {
+        if (strcmp($2, "main") == 0) {
+            in_main_function = 1;
+        }
+        indent_level = 0;
+        free($2);
+    } compound_statement {
+        in_main_function = 0;
+        indent_level = 0;
+    }
     ;
 
 declaration:
@@ -123,7 +137,6 @@ type:
     INT     { $$ = strdup("int"); }
     | FLOAT { $$ = strdup("float"); }
     | CHAR  { $$ = strdup("char"); }
-    | VOID  { $$ = strdup("void"); }
     ;
 
 idlist:
@@ -140,19 +153,6 @@ idlist:
 
 array_size:
     NUMBER { $$ = $1; }
-    ;
-
-function_definition:
-    VOID ID LPAREN RPAREN {
-        if (strcmp($2, "main") == 0) {
-            in_main_function = 1;
-        }
-        indent_level = 0;
-        free($2);
-    } compound_statement {
-        in_main_function = 0;
-        indent_level = 0;
-    }
     ;
 
 statement:
@@ -200,7 +200,7 @@ assignment_statement:
     ;
 
 if_statement:
-    IF LPAREN expression RPAREN statement %prec ELSE {
+    IF LPAREN expression RPAREN statement %prec LOWER_THAN_ELSE {
         print_indent();
         fprintf(output_file, "if %s:\n", $3);
         free($3);
