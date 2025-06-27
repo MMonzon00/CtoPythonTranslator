@@ -41,9 +41,3 @@ while (z > 0) {
     z = z - 1;
 }
 
-// For dentro de if
-if (result > 0) {
-    for (x = 1; x <= 3; x = x + 1) {
-        result = result * 2;
-    }
-}

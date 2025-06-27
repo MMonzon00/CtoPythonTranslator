@@ -463,6 +463,12 @@ expression:
         free($1); free($3);
         $$ = result;
     }
+    | expression MODULO term {
+        char* result = malloc(strlen($1) + strlen($3) + 4);
+        sprintf(result, "%s %% %s", $1, $3);
+        free($1); free($3);
+        $$ = result;
+    }
     | expression EQ term {
         char* result = malloc(strlen($1) + strlen($3) + 5);
         sprintf(result, "%s == %s", $1, $3);
