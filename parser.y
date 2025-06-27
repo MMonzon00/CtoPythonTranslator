@@ -73,7 +73,6 @@ extern FILE* yyin;
 %token SEMICOLON COMMA
 
 %type <sval> type idlist expression term factor
-%type <ival> array_size
 %type <dimensions> array_dimensions
 %type <sval> index_list
 
@@ -302,10 +301,6 @@ index_list:
         free($3);
         $$ = result;
     }
-    ;
-
-array_size:
-    NUMBER { $$ = $1; }
     ;
 
 statement:
