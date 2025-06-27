@@ -88,12 +88,35 @@ function_definition:
     VOID ID LPAREN RPAREN {
         if (strcmp($2, "main") == 0) {
             in_main_function = 1;
+            print_indent();
+            fprintf(output_file, "def %s():\n", $2);
+        } else {
+            print_indent();
+            fprintf(output_file, "def %s():\n", $2);
         }
-        indent_level = 0;
+        indent_level++;
         free($2);
     } compound_statement {
+        indent_level--;
         in_main_function = 0;
-        indent_level = 0;
+        fprintf(output_file, "\n");
+    }
+    | type ID LPAREN RPAREN {
+        if (strcmp($2, "main") == 0) {
+            in_main_function = 1;
+            print_indent();
+            fprintf(output_file, "def %s():\n", $2);
+        } else {
+            print_indent();
+            fprintf(output_file, "def %s():\n", $2);
+        }
+        indent_level++;
+        free($1);
+        free($2);
+    } compound_statement {
+        indent_level--;
+        in_main_function = 0;
+        fprintf(output_file, "\n");
     }
     ;
 
@@ -206,6 +229,19 @@ statement:
     | while_statement
     | compound_statement
     | expression_statement
+    | return_statement
+    ;
+
+return_statement:
+    RETURN SEMICOLON {
+        print_indent();
+        fprintf(output_file, "return\n");
+    }
+    | RETURN expression SEMICOLON {
+        print_indent();
+        fprintf(output_file, "return %s\n", $2);
+        free($2);
+    }
     ;
 
 assignment_statement:
@@ -395,6 +431,13 @@ factor:
             yyerror("Undeclared variable");
         }
         $$ = strdup($1); 
+        free($1);
+    }
+    | ID LPAREN RPAREN {
+        char* result = malloc(strlen($1) + 3);
+        sprintf(result, "%s()", $1);
+        free($1);
+        $$ = result;
     }
     | ID index_list {
         symbol_t* sym = find_symbol($1);
@@ -405,6 +448,7 @@ factor:
         }
         char* result = malloc(strlen($1) + strlen($2) + 1);
         sprintf(result, "%s%s", $1, $2);
+        free($1);
         free($2);
         $$ = result;
     }
