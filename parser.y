@@ -10,13 +10,22 @@ typedef struct symbol {
     int is_array;
     int dimensions;         // Number of dimensions (0 = not array, 1 = 1D, 2 = 2D, etc.)
     int* sizes;            // Array to store sizes for each dimension
+    int scope_level;       // 0 = global, 1+ = function level
     struct symbol* next;
 } symbol_t;
 
-symbol_t* symbol_table = NULL;
+typedef struct scope {
+    symbol_t* symbols;     // Local symbol table for this scope
+    int level;            // Scope level (0 = global, 1+ = function)
+    struct scope* parent; // Parent scope
+} scope_t;
+
+symbol_t* symbol_table = NULL;  // Global symbol table
+scope_t* current_scope = NULL;  // Current scope
+int scope_level = 0;           // Current scope level
 int indent_level = 0;
 int in_control_structure = 0;  // Flag to track if we're inside if/while/for
-int in_main_function = 0;      // Flag to track if we're inside main function
+int in_function = 0;           // Flag to track if we're inside any function
 FILE* output_file = NULL;
 char* input_filename = NULL;
 char* output_filename = NULL;
@@ -31,6 +40,10 @@ void open_output_file(char* filename);
 void close_output_file();
 char* generate_multidim_access(char* name, char* indices[], int dim_count);
 char* generate_multidim_init(char* type, int dimensions, int* sizes);
+void enter_scope();
+void exit_scope();
+symbol_t* find_symbol_in_scope(char* name, int level);
+void add_symbol_to_current_scope(char* name, char* type, int is_const, int dimensions, int* sizes);
 
 int yylex(void);
 int yyerror(char *s);
@@ -60,7 +73,7 @@ extern FILE* yyin;
 %token SEMICOLON COMMA
 
 %type <sval> type idlist expression term factor
-%type <ival> const_flag array_size
+%type <ival> array_size
 %type <dimensions> array_dimensions
 %type <sval> index_list
 
@@ -87,7 +100,7 @@ program:
 function_definition:
     VOID ID LPAREN RPAREN {
         if (strcmp($2, "main") == 0) {
-            in_main_function = 1;
+            in_function = 1;
             print_indent();
             fprintf(output_file, "def %s():\n", $2);
         } else {
@@ -95,15 +108,17 @@ function_definition:
             fprintf(output_file, "def %s():\n", $2);
         }
         indent_level++;
+        enter_scope();
         free($2);
     } compound_statement {
+        exit_scope();
         indent_level--;
-        in_main_function = 0;
+        in_function = 0;
         fprintf(output_file, "\n");
     }
     | type ID LPAREN RPAREN {
         if (strcmp($2, "main") == 0) {
-            in_main_function = 1;
+            in_function = 1;
             print_indent();
             fprintf(output_file, "def %s():\n", $2);
         } else {
@@ -111,66 +126,136 @@ function_definition:
             fprintf(output_file, "def %s():\n", $2);
         }
         indent_level++;
+        enter_scope();
         free($1);
         free($2);
     } compound_statement {
+        exit_scope();
         indent_level--;
-        in_main_function = 0;
+        in_function = 0;
         fprintf(output_file, "\n");
     }
     ;
 
 declaration:
-    const_flag type idlist SEMICOLON {
+    type idlist SEMICOLON {
+        char* ids = $2;
+        char* token = strtok(ids, ",");
+        while (token != NULL) {
+            if (in_function) {
+                add_symbol_to_current_scope(token, $1, 0, 0, NULL);
+            } else {
+                add_symbol(token, $1, 0, 0, NULL);
+            }
+            generate_python_declaration($1, token, 0, 0, NULL);
+            token = strtok(NULL, ",");
+        }
+        free($1);
+        free($2);
+    }
+    | CONST type idlist SEMICOLON {
         char* ids = $3;
         char* token = strtok(ids, ",");
         while (token != NULL) {
-            add_symbol(token, $2, $1, 0, NULL);  // not array
-            generate_python_declaration($2, token, $1, 0, NULL);
+            if (in_function) {
+                add_symbol_to_current_scope(token, $2, 1, 0, NULL);
+            } else {
+                add_symbol(token, $2, 1, 0, NULL);
+            }
+            generate_python_declaration($2, token, 1, 0, NULL);
             token = strtok(NULL, ",");
         }
+        free($2);
         free($3);
     }
-    | const_flag type ID ASSIGN expression SEMICOLON {
-        add_symbol($3, $2, $1, 0, NULL);  // not array
-        print_indent();
-        if ($1) {
-            fprintf(output_file, "# Constant: %s\n", $3);
-            print_indent();
+    | type ID ASSIGN expression SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($2, $1, 0, 0, NULL);
+        } else {
+            add_symbol($2, $1, 0, 0, NULL);
         }
+        print_indent();
+        fprintf(output_file, "%s = %s  # %s\n", $2, $4, $1);
+        free($1);
+        free($2);
+        free($4);
+    }
+    | CONST type ID ASSIGN expression SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($3, $2, 1, 0, NULL);
+        } else {
+            add_symbol($3, $2, 1, 0, NULL);
+        }
+        print_indent();
+        fprintf(output_file, "# Constant: %s\n", $3);
+        print_indent();
         fprintf(output_file, "%s = %s  # %s\n", $3, $5, $2);
+        free($2);
         free($3);
         free($5);
     }
-    | const_flag type ID array_dimensions SEMICOLON {
-        add_symbol($3, $2, $1, $4.count, $4.sizes);  // multidimensional array
-        generate_python_declaration($2, $3, $1, $4.count, $4.sizes);
+    | type ID array_dimensions SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($2, $1, 0, $3.count, $3.sizes);
+        } else {
+            add_symbol($2, $1, 0, $3.count, $3.sizes);
+        }
+        generate_python_declaration($1, $2, 0, $3.count, $3.sizes);
+        free($1);
+        free($2);
+        free($3.sizes);
+    }
+    | CONST type ID array_dimensions SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($3, $2, 1, $4.count, $4.sizes);
+        } else {
+            add_symbol($3, $2, 1, $4.count, $4.sizes);
+        }
+        generate_python_declaration($2, $3, 1, $4.count, $4.sizes);
+        free($2);
         free($3);
         free($4.sizes);
     }
-    | const_flag type ID array_dimensions ASSIGN LBRACE expression RBRACE SEMICOLON {
-        add_symbol($3, $2, $1, $4.count, $4.sizes);  // multidimensional array with initialization
-        print_indent();
-        if ($1) {
-            fprintf(output_file, "# Constant array: %s\n", $3);
-            print_indent();
+    | type ID array_dimensions ASSIGN LBRACE expression RBRACE SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($2, $1, 0, $3.count, $3.sizes);
+        } else {
+            add_symbol($2, $1, 0, $3.count, $3.sizes);
         }
+        print_indent();
+        char* init_code = generate_multidim_init($1, $3.count, $3.sizes);
+        fprintf(output_file, "%s = %s  # %s array", $2, init_code, $1);
+        for (int i = 0; i < $3.count; i++) {
+            fprintf(output_file, "[%d]", $3.sizes[i]);
+        }
+        fprintf(output_file, "\n");
+        free($1);
+        free($2);
+        free($6);
+        free(init_code);
+        free($3.sizes);
+    }
+    | CONST type ID array_dimensions ASSIGN LBRACE expression RBRACE SEMICOLON {
+        if (in_function) {
+            add_symbol_to_current_scope($3, $2, 1, $4.count, $4.sizes);
+        } else {
+            add_symbol($3, $2, 1, $4.count, $4.sizes);
+        }
+        print_indent();
+        fprintf(output_file, "# Constant array: %s\n", $3);
+        print_indent();
         char* init_code = generate_multidim_init($2, $4.count, $4.sizes);
         fprintf(output_file, "%s = %s  # %s array", $3, init_code, $2);
         for (int i = 0; i < $4.count; i++) {
             fprintf(output_file, "[%d]", $4.sizes[i]);
         }
         fprintf(output_file, "\n");
+        free($2);
         free($3);
         free($7);
         free(init_code);
         free($4.sizes);
     }
-    ;
-
-const_flag:
-    /* empty */ { $$ = 0; }
-    | CONST     { $$ = 1; }
     ;
 
 type:
@@ -308,19 +393,16 @@ while_statement:
 
 compound_statement:
     LBRACE { 
-        if (!in_main_function) {
-            indent_level++;
-        }
+        // Don't adjust indent for function bodies, they're handled by function_definition
     } statement_list RBRACE {
-        if (!in_main_function) {
-            indent_level--;
-        }
+        // Don't adjust indent for function bodies
     }
     ;
 
 statement_list:
     /* empty */
     | statement_list statement
+    | statement_list declaration
     ;
 
 expression_statement:
@@ -480,6 +562,7 @@ void add_symbol(char* name, char* type, int is_const, int dimensions, int* sizes
     new_symbol->is_const = is_const;
     new_symbol->is_array = (dimensions > 0);
     new_symbol->dimensions = dimensions;
+    new_symbol->scope_level = 0;  // Global scope
     
     if (dimensions > 0) {
         new_symbol->sizes = malloc(dimensions * sizeof(int));
@@ -490,11 +573,37 @@ void add_symbol(char* name, char* type, int is_const, int dimensions, int* sizes
         new_symbol->sizes = NULL;
     }
     
+    new_symbol->scope_level = 0;  // Global scope
     new_symbol->next = symbol_table;
     symbol_table = new_symbol;
 }
 
 symbol_t* find_symbol(char* name) {
+    // First check current scope and parent scopes
+    if (current_scope) {
+        symbol_t* current = current_scope->symbols;
+        while (current) {
+            if (strcmp(current->name, name) == 0) {
+                return current;
+            }
+            current = current->next;
+        }
+        
+        // Check parent scopes
+        scope_t* parent = current_scope->parent;
+        while (parent) {
+            current = parent->symbols;
+            while (current) {
+                if (strcmp(current->name, name) == 0) {
+                    return current;
+                }
+                current = current->next;
+            }
+            parent = parent->parent;
+        }
+    }
+    
+    // Finally check global scope
     symbol_t* current = symbol_table;
     while (current) {
         if (strcmp(current->name, name) == 0) {
@@ -503,6 +612,62 @@ symbol_t* find_symbol(char* name) {
         current = current->next;
     }
     return NULL;
+}
+
+void enter_scope() {
+    scope_t* new_scope = malloc(sizeof(scope_t));
+    new_scope->symbols = NULL;
+    new_scope->level = scope_level++;
+    new_scope->parent = current_scope;
+    current_scope = new_scope;
+}
+
+void exit_scope() {
+    if (current_scope) {
+        scope_t* old_scope = current_scope;
+        current_scope = current_scope->parent;
+        scope_level--;
+        
+        // Free the symbols in the old scope
+        symbol_t* current = old_scope->symbols;
+        while (current) {
+            symbol_t* temp = current;
+            current = current->next;
+            free(temp->name);
+            free(temp->type);
+            if (temp->sizes) free(temp->sizes);
+            free(temp);
+        }
+        free(old_scope);
+    }
+}
+
+void add_symbol_to_current_scope(char* name, char* type, int is_const, int dimensions, int* sizes) {
+    symbol_t* new_symbol = malloc(sizeof(symbol_t));
+    new_symbol->name = strdup(name);
+    new_symbol->type = strdup(type);
+    new_symbol->is_const = is_const;
+    new_symbol->is_array = (dimensions > 0);
+    new_symbol->dimensions = dimensions;
+    new_symbol->scope_level = (current_scope ? current_scope->level : 0);
+    
+    if (dimensions > 0) {
+        new_symbol->sizes = malloc(dimensions * sizeof(int));
+        for (int i = 0; i < dimensions; i++) {
+            new_symbol->sizes[i] = sizes[i];
+        }
+    } else {
+        new_symbol->sizes = NULL;
+    }
+    
+    if (current_scope) {
+        new_symbol->next = current_scope->symbols;
+        current_scope->symbols = new_symbol;
+    } else {
+        // Fall back to global scope if no current scope
+        new_symbol->next = symbol_table;
+        symbol_table = new_symbol;
+    }
 }
 
 void print_indent() {
