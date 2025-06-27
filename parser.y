@@ -26,6 +26,7 @@ int scope_level = 0;           // Current scope level
 int indent_level = 0;
 int in_control_structure = 0;  // Flag to track if we're inside if/while/for
 int in_function = 0;           // Flag to track if we're inside any function
+int last_was_if_statement = 0; // Flag to track if the last statement was an if
 FILE* output_file = NULL;
 char* input_filename = NULL;
 char* output_filename = NULL;
@@ -151,6 +152,7 @@ declaration:
         }
         free($1);
         free($2);
+        last_was_if_statement = 0;  // Resetear la flag después de declaraciones
     }
     | CONST type idlist SEMICOLON {
         char* ids = $3;
@@ -312,6 +314,42 @@ statement:
     | return_statement
     ;
 
+if_statement:
+    if_header statement %prec LOWER_THAN_ELSE {
+        // if_header ya escribió "if condition:", ahora solo decrementar indentación
+        indent_level--;
+        last_was_if_statement = 1;  // Marcar que acabamos de procesar un if
+    }
+    | if_header statement else_header statement {
+        // if_header escribió "if condition:", statement se procesó con indentación
+        // else_header escribió "else:", segundo statement se procesó con indentación
+        indent_level--;
+        last_was_if_statement = 1;  // Marcar que acabamos de procesar un if-else
+    }
+    ;
+
+if_header:
+    IF LPAREN expression RPAREN {
+        // Si el statement anterior fue un if, agregar una línea vacía para separación
+        if (last_was_if_statement) {
+            fprintf(output_file, "\n");
+        }
+        print_indent();
+        fprintf(output_file, "if %s:\n", $3);
+        indent_level++;
+        free($3);
+    }
+    ;
+
+else_header:
+    ELSE {
+        indent_level--;
+        print_indent();
+        fprintf(output_file, "else:\n");
+        indent_level++;
+    }
+    ;
+
 return_statement:
     RETURN SEMICOLON {
         print_indent();
@@ -360,20 +398,7 @@ assignment_statement:
     }
     ;
 
-if_statement:
-    IF LPAREN expression RPAREN statement %prec LOWER_THAN_ELSE {
-        print_indent();
-        fprintf(output_file, "if %s:\n", $3);
-        free($3);
-    }
-    | IF LPAREN expression RPAREN statement ELSE statement {
-        print_indent();
-        fprintf(output_file, "if %s:\n", $3);
-        print_indent();
-        fprintf(output_file, "else:\n");
-        free($3);
-    }
-    ;
+
 
 while_statement:
     WHILE LPAREN expression RPAREN {
@@ -388,9 +413,9 @@ while_statement:
 
 compound_statement:
     LBRACE { 
-        // Don't adjust indent for function bodies, they're handled by function_definition
+        // No incrementar indentación aquí, ya se maneja en las estructuras de control
     } statement_list RBRACE {
-        // Don't adjust indent for function bodies
+        // No decrementar indentación aquí
     }
     ;
 
@@ -404,9 +429,12 @@ expression_statement:
     expression SEMICOLON {
         print_indent();
         fprintf(output_file, "%s\n", $1);
+        last_was_if_statement = 0;  // Resetear la flag
         free($1);
     }
-    | SEMICOLON /* empty statement */
+    | SEMICOLON /* empty statement */ {
+        last_was_if_statement = 0;  // Resetear la flag
+    }
     ;
 
 expression:
