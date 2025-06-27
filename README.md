@@ -37,17 +37,22 @@ gcc -o compiler lex.yy.c parser.tab.c -lfl
 int x, y, z;
 float pi;
 const int MAX_SIZE;
+int numbers[5];
+float values[3];
 
 x = 10;
 y = x + 5;
+numbers[0] = 100;
+numbers[1] = x + y;
+values[2] = 3.14;
 
 if (x > 5) {
-    z = x * y;
+    z = x * y + numbers[0];
 }
 
 while (x > 0) {
     x = x - 1;
-    y = y + x;
+    y = y + numbers[x];
 }
 ```
 
@@ -62,13 +67,18 @@ z = 0  # int
 pi = 0.0  # float
 # Constant: MAX_SIZE
 MAX_SIZE = 0  # int
+numbers = [0] * 5  # int array[5]
+values = [0.0] * 3  # float array[3]
 x = 10
 y = x + 5
+numbers[0] = 100
+numbers[1] = x + y
+values[2] = 3.140000
 if x > 5:
-    z = x * y
+    z = x * y + numbers[0]
 while x > 0:
     x = x - 1
-    y = y + x
+    y = y + numbers[x]
 ```
 
 ### Running the generated code:
@@ -81,6 +91,8 @@ python3 test.py
 ### ✅ Currently Implemented:
 - Variable declarations (`int x, y, z;`)
 - Constant declarations (`const int MAX_SIZE;`)
+- **Array/Vector declarations (`int arr[10];`, `float data[5];`)**
+- **Array element access and assignment (`arr[0] = 10;`, `x = arr[i];`)**
 - Basic assignments (`x = 10;`)
 - Arithmetic expressions (`x + y * z`)
 - Comparison operations (`x > 5`, `x == y`)
@@ -91,18 +103,25 @@ python3 test.py
 - Nested structures with proper indentation
 - Symbol table with type checking
 - Error detection for undeclared variables and const assignments
+- **Array bounds and type validation**
 
 ### 🔄 Automatic Translations:
 - C operators → Python operators
 - `&&` → `and`
 - `||` → `or`
 - `!` → `not`
+- **C arrays → Python lists with appropriate initialization**
+- **`int arr[n]` → `arr = [0] * n`**
+- **`float arr[n]` → `arr = [0.0] * n`**
+- **`char arr[n]` → `arr = [''] * n`**
 - Proper indentation for nested blocks
 - Type-appropriate default values
 
 ### ❌ Error Detection:
 - Undeclared variable usage
 - Assignment to constant variables
+- **Array access on non-array variables**
+- **Assignment to constant array elements**
 - Syntax errors with helpful messages
 
 ## Testing

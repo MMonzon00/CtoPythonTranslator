@@ -7,6 +7,8 @@ typedef struct symbol {
     char* name;
     char* type;
     int is_const;
+    int is_array;
+    int array_size;
     struct symbol* next;
 } symbol_t;
 
@@ -18,10 +20,10 @@ FILE* output_file = NULL;
 char* input_filename = NULL;
 char* output_filename = NULL;
 
-void add_symbol(char* name, char* type, int is_const);
+void add_symbol(char* name, char* type, int is_const, int is_array, int array_size);
 symbol_t* find_symbol(char* name);
 void print_indent();
-void generate_python_declaration(char* type, char* name, int is_const);
+void generate_python_declaration(char* type, char* name, int is_const, int is_array, int array_size);
 char* translate_type(char* c_type);
 char* get_output_filename(char* input_name);
 void open_output_file(char* filename);
@@ -51,7 +53,7 @@ extern FILE* yyin;
 %token SEMICOLON COMMA
 
 %type <sval> type idlist expression term factor
-%type <ival> const_flag
+%type <ival> const_flag array_size
 
 %left OR
 %left AND
@@ -77,14 +79,14 @@ declaration:
         char* ids = $3;
         char* token = strtok(ids, ",");
         while (token != NULL) {
-            add_symbol(token, $2, $1);
-            generate_python_declaration($2, token, $1);
+            add_symbol(token, $2, $1, 0, 0);  // not array
+            generate_python_declaration($2, token, $1, 0, 0);
             token = strtok(NULL, ",");
         }
         free($3);
     }
     | const_flag type ID ASSIGN expression SEMICOLON {
-        add_symbol($3, $2, $1);
+        add_symbol($3, $2, $1, 0, 0);  // not array
         print_indent();
         if ($1) {
             fprintf(output_file, "# Constant: %s\n", $3);
@@ -93,6 +95,22 @@ declaration:
         fprintf(output_file, "%s = %s  # %s\n", $3, $5, $2);
         free($3);
         free($5);
+    }
+    | const_flag type ID LBRACKET array_size RBRACKET SEMICOLON {
+        add_symbol($3, $2, $1, 1, $5);  // is array
+        generate_python_declaration($2, $3, $1, 1, $5);
+        free($3);
+    }
+    | const_flag type ID LBRACKET array_size RBRACKET ASSIGN LBRACE expression RBRACE SEMICOLON {
+        add_symbol($3, $2, $1, 1, $5);  // is array with initialization
+        print_indent();
+        if ($1) {
+            fprintf(output_file, "# Constant array: %s\n", $3);
+            print_indent();
+        }
+        fprintf(output_file, "%s = [%s]  # %s array[%d]\n", $3, $9, $2, $5);
+        free($3);
+        free($9);
     }
     ;
 
@@ -118,6 +136,10 @@ idlist:
         free($1);
         $$ = tmp;
     }
+    ;
+
+array_size:
+    NUMBER { $$ = $1; }
     ;
 
 function_definition:
@@ -156,6 +178,24 @@ assignment_statement:
         }
         free($1);
         free($3);
+    }
+    | ID LBRACKET expression RBRACKET ASSIGN expression SEMICOLON {
+        symbol_t* sym = find_symbol($1);
+        if (sym) {
+            if (sym->is_const) {
+                yyerror("Cannot assign to constant array element");
+            } else if (!sym->is_array) {
+                yyerror("Variable is not an array");
+            } else {
+                print_indent();
+                fprintf(output_file, "%s[%s] = %s\n", $1, $3, $6);
+            }
+        } else {
+            yyerror("Undeclared variable");
+        }
+        free($1);
+        free($3);
+        free($6);
     }
     ;
 
@@ -311,6 +351,18 @@ factor:
         }
         $$ = strdup($1); 
     }
+    | ID LBRACKET expression RBRACKET {
+        symbol_t* sym = find_symbol($1);
+        if (!sym) {
+            yyerror("Undeclared variable");
+        } else if (!sym->is_array) {
+            yyerror("Variable is not an array");
+        }
+        char* result = malloc(strlen($1) + strlen($3) + 4);
+        sprintf(result, "%s[%s]", $1, $3);
+        free($3);
+        $$ = result;
+    }
     | NUMBER { 
         char* result = malloc(20);
         sprintf(result, "%d", $1);
@@ -332,11 +384,13 @@ factor:
 
 %%
 
-void add_symbol(char* name, char* type, int is_const) {
+void add_symbol(char* name, char* type, int is_const, int is_array, int array_size) {
     symbol_t* new_symbol = malloc(sizeof(symbol_t));
     new_symbol->name = strdup(name);
     new_symbol->type = strdup(type);
     new_symbol->is_const = is_const;
+    new_symbol->is_array = is_array;
+    new_symbol->array_size = array_size;
     new_symbol->next = symbol_table;
     symbol_table = new_symbol;
 }
@@ -358,21 +412,33 @@ void print_indent() {
     }
 }
 
-void generate_python_declaration(char* type, char* name, int is_const) {
+void generate_python_declaration(char* type, char* name, int is_const, int is_array, int array_size) {
     print_indent();
     if (is_const) {
-        fprintf(output_file, "# Constant: %s\n", name);
+        fprintf(output_file, "# Constant%s: %s\n", is_array ? " array" : "", name);
         print_indent();
     }
     
-    if (strcmp(type, "int") == 0) {
-        fprintf(output_file, "%s = 0  # int\n", name);
-    } else if (strcmp(type, "float") == 0) {
-        fprintf(output_file, "%s = 0.0  # float\n", name);
-    } else if (strcmp(type, "char") == 0) {
-        fprintf(output_file, "%s = ''  # char\n", name);
+    if (is_array) {
+        if (strcmp(type, "int") == 0) {
+            fprintf(output_file, "%s = [0] * %d  # int array[%d]\n", name, array_size, array_size);
+        } else if (strcmp(type, "float") == 0) {
+            fprintf(output_file, "%s = [0.0] * %d  # float array[%d]\n", name, array_size, array_size);
+        } else if (strcmp(type, "char") == 0) {
+            fprintf(output_file, "%s = [''] * %d  # char array[%d]\n", name, array_size, array_size);
+        } else {
+            fprintf(output_file, "%s = [None] * %d  # %s array[%d]\n", name, array_size, type, array_size);
+        }
     } else {
-        fprintf(output_file, "%s = None  # %s\n", name, type);
+        if (strcmp(type, "int") == 0) {
+            fprintf(output_file, "%s = 0  # int\n", name);
+        } else if (strcmp(type, "float") == 0) {
+            fprintf(output_file, "%s = 0.0  # float\n", name);
+        } else if (strcmp(type, "char") == 0) {
+            fprintf(output_file, "%s = ''  # char\n", name);
+        } else {
+            fprintf(output_file, "%s = None  # %s\n", name, type);
+        }
     }
 }
 

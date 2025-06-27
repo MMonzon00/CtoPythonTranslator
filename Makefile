@@ -68,6 +68,10 @@ test-loops: compiler
 	./compiler test/test_loops.c
 	@echo "✅ Test de loops completado"
 
+test-arrays: compiler
+	./compiler test/test_arrays.c
+	@echo "✅ Test de arrays completado"
+
 test-nested: compiler
 	./compiler test/test_nested.c
 	@echo "✅ Test de estructuras anidadas completado"
