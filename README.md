@@ -186,7 +186,6 @@ make clean
 ### Gestión avanzada:
 - Scope management (variables globales y locales)
 - Detección de errores (variables no declaradas, asignación a constantes)
-- Comentarios (`//`)
 
 ## Estructura del Proyecto
 ```
